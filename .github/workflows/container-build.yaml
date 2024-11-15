@@ -31,3 +31,5 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}"
