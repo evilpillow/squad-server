@@ -1,47 +1,36 @@
 #!/bin/bash
 
-game_port=${PORT-7787}
-query_port=${QUERYPORT-27165}
-rcon_port=${RCONPORT-21114}
-max_players=${FIXEDMAXPLAYERS-80}
-max_tickrate=${FIXEDMAXTICKRATE-50}
-RANDOM=${RANDOM-NONE}
+steam_cmd="${STEAMCMDDIR}/steamcmd.sh"
 
-if [ -n "${STEAM_BETA_BRANCH}" ]; then
-  echo "Loading Steam Beta Branch"
-  bash "${STEAMCMDDIR}/steamcmd.sh" +force_install_dir "${STEAMAPPDIR}" \
-    +login anonymous \
-    +app_update "${STEAM_BETA_APP}" \
-    -beta "${STEAM_BETA_BRANCH}" \
-    -betapassword "${STEAM_BETA_PASSWORD}" \
-    +quit
+server_update_args=(+force_install_dir "${STEAMAPPDIR}" +login anonymous +app_update)
+
+if [[ -n ${STEAM_BETA_BRANCH} ]]; then
+  server_update_args+=("${STEAM_BETA_APP}" -beta "${STEAM_BETA_BRANCH}" -betapassword "${STEAM_BETA_PASSWORD}")
 else
-  echo "Loading Steam Release Branch"
-  bash "${STEAMCMDDIR}/steamcmd.sh" +force_install_dir "${STEAMAPPDIR}" \
-    +login anonymous \
-    +app_update "${STEAMAPPID}" \
-    +quit
+  server_update_args+=("${STEAMAPPID}")
+fi
+
+server_update_args+=(+quit)
+
+if ! "${steam_cmd}" "${server_update_args[@]}"; then
+  echo 'Failed to download server, exiting'
+  exit 1
 fi
 
 # Change rcon port on first launch, because the default config overwrites the commandline parameter (you can comment this out if it has done it's purpose)
-sed -i -e 's/Port=21114/'"Port=${rcon_port}"'/g' "${STEAMAPPDIR}/SquadGame/ServerConfig/Rcon.cfg"
+sed -i -e 's/Port=21114/'"Port=${RCONPORT}"'/g' "${STEAMAPPDIR}/SquadGame/ServerConfig/Rcon.cfg"
 
-echo "Clearing Mods..."
-# Clear all workshop mods:
-# find all folders / files in mods folder which are numeric only;
-# remove the workshop mods
-if [ -f "${MODPATH}" ]; then
-  find "${MODPATH}"/* -maxdepth 0 -regextype posix-egrep -regex ".*/[[:digit:]]+" | xargs -0 -d"\n" rm -R 2>/dev/null
-fi
-
-install_mod() {
+download_mod() {
   modid="$1"
-  "${STEAMCMDDIR}/steamcmd.sh" +force_install_dir "${STEAMAPPDIR}" +login anonymous +workshop_download_item "${WORKSHOPID}" "${modid}" validate +quit
-  if [ $? -eq 0 ]; then
-    echo "> Mod installed"
+  echo "Downloading mod '${modid}'"
+
+  download_args=(+force_install_dir "${STEAMAPPDIR}" +login anonymous +workshop_download_item "${WORKSHOPID}" "${modid}" validate +quit)
+
+  if "${steam_cmd}" "${download_args[@]}"; then
+    printf "\nDownloaded mod\n"
   else
-    echo "> Failed to install mod, non zero exit code, retrying"
-    install_mod "$1"
+    printf "\nFailed to download mod, retrying\n"
+    download_mod "$1"
   fi
 }
 
@@ -49,47 +38,46 @@ ensure_mods_installed() {
   # Install mods (if defined)
   declare -a MODS="${MODS}"
   if ((${#MODS[@]})); then
-    echo "Installing Mods..."
+    echo "Installing Mods"
     for MODID in "${MODS[@]}"; do
-      echo "> Install mod '${MODID}'"
 
-      install_mod "$MODID"
+      download_mod "${MODID}"
 
-      echo -e "\n> Link mod content '${MODID}'"
-      ln -s "${STEAMAPPDIR}/steamapps/workshop/content/${WORKSHOPID}/${MODID}" "${MODPATH}/${MODID}"
+      echo "Link mod content ${MODID})"
+      downloaded="${STEAMAPPDIR}/steamapps/workshop/content/${WORKSHOPID}/${MODID}"
+      to="${MODPATH}/${MODID}"
+
+      if [[ -e $to ]]; then
+        echo "Won't link"
+      else
+        ln -s "$downloaded" "$to"
+        echo "Linked mod"
+      fi
     done
   fi
 }
 
-if [ -n "${IGNORE_MODS}" ]; then
+if [[ -n "${IGNORE_MODS}" ]]; then
   echo "Ignoring mods"
 else
+  echo "Syncing mods"
+  if [[ -f "${MODPATH}" ]]; then
+    find "${MODPATH}"/* -maxdepth 0 -regextype posix-egrep -regex ".*/[[:digit:]]+" | xargs -0 -d"\n" rm -R 2>/dev/null
+  fi
   ensure_mods_installed
 fi
 
-port_arg="Port=${game_port}"
-query_port_arg="QueryPort=${query_port}"
-rcon_port_arg="RCONPORT=${rcon_port}"
-fixed_max_players_arg="FIXEDMAXPLAYERS=${max_players}"
-fixed_max_tickrate_arg="FIXEDMAXTICKRATE=${max_tickrate}"
-random_arg="RANDOM=${RANDOM}"
+start_args=()
 
-beacon_port_arg=""
-if [[ -v BEACONPORT ]]; then
-  beacon_port_arg="beaconport=${BEACONPORT}"
-fi
+[[ -n $PORT ]] && start_args+=("Port=${PORT}")
+[[ -n $QUERYPORT ]] && start_args+=("QueryPort=${QUERYPORT}")
+[[ -n $RCONPORT ]] && start_args+=("RCONPORT=${RCONPORT}")
+[[ -n $FIXEDMAXPLAYERS ]] && start_args+=("FIXEDMAXPLAYERS=${FIXEDMAXPLAYERS}")
+[[ -n $FIXEDMAXTICKRATE ]] && start_args+=("FIXEDMAXTICKRATE=${FIXEDMAXTICKRATE}")
+[[ -n $RANDOM_ARG ]] && start_args+=("RANDOM=${RANDOM_ARG}")
+[[ -n $BEACONPORT ]] && start_args+=("beaconport=${BEACONPORT}")
+[[ -n $FULLCRASHDUMP ]] && start_args+=("-fullcrashdump")
 
-crash_dump_arg=""
-if [[ -v FULLCRASHDUMP ]]; then
-  crash_dump_arg="-fullcrashdump"
-fi
+echo "Starting server"
 
-bash "${STEAMAPPDIR}/SquadGameServer.sh" \
-  "$port_arg" \
-  "$query_port_arg" \
-  "$rcon_port_arg" \
-  "$beacon_port_arg" \
-  "$fixed_max_players_arg" \
-  "$fixed_max_tickrate_arg" \
-  "$random_arg" \
-  "$crash_dump_arg" | dos2unix
+"${STEAMAPPDIR}/SquadGameServer.sh" "${start_args[@]}" | dos2unix
