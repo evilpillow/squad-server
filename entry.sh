@@ -13,7 +13,7 @@ fi
 server_update_args+=(+quit)
 
 if ! "${steam_cmd}" "${server_update_args[@]}"; then
-  echo 'Failed to download server, exiting'
+  echo '[ERROR][Server::update] Server update failed, exiting'
   exit 1
 fi
 
@@ -22,14 +22,14 @@ sed -i -e 's/Port=21114/'"Port=${RCONPORT}"'/g' "${STEAMAPPDIR}/SquadGame/Server
 
 download_mod() {
   modid="$1"
-  echo "Downloading mod '${modid}'"
+  echo "[INFO][Mod::download] Downloading mod '${modid}'"
 
   download_args=(+force_install_dir "${STEAMAPPDIR}" +login anonymous +workshop_download_item "${WORKSHOPID}" "${modid}" validate +quit)
 
   if "${steam_cmd}" "${download_args[@]}"; then
-    printf "\nDownloaded mod\n"
+    printf "\n[INFO][Mod::download] Mod downloaded\n"
   else
-    printf "\nFailed to download mod, retrying\n"
+    printf "\n[ERROR][Mod::downloaod] Failed to download mod, retrying\n"
     download_mod "$1"
   fi
 }
@@ -38,29 +38,28 @@ ensure_mods_installed() {
   # Install mods (if defined)
   declare -a MODS="${MODS}"
   if ((${#MODS[@]})); then
-    echo "Installing Mods"
+    echo "[INFO][Mods] Installing Mods"
     for MODID in "${MODS[@]}"; do
 
       download_mod "${MODID}"
 
-      echo "Link mod content ${MODID})"
       downloaded="${STEAMAPPDIR}/steamapps/workshop/content/${WORKSHOPID}/${MODID}"
       to="${MODPATH}/${MODID}"
 
       if [[ -e $to ]]; then
-        echo "Won't link"
+        echo "[INFO][Mod::link] Won't link"
       else
         ln -s "$downloaded" "$to"
-        echo "Linked mod"
+        echo "[INFO][Mod::link] Mod linked"
       fi
     done
   fi
 }
 
 if [[ -n "${IGNORE_MODS}" ]]; then
-  echo "Ignoring mods"
+  echo "[INFO][Mods] Ignoring mods"
 else
-  echo "Syncing mods"
+  echo "[INFO][Mods] Syncing mod list"
   if [[ -f "${MODPATH}" ]]; then
     find "${MODPATH}"/* -maxdepth 0 -regextype posix-egrep -regex ".*/[[:digit:]]+" | xargs -0 -d"\n" rm -R 2>/dev/null
   fi
@@ -78,6 +77,6 @@ start_args=()
 [[ -n $BEACONPORT ]] && start_args+=("beaconport=${BEACONPORT}")
 [[ -n $FULLCRASHDUMP ]] && start_args+=("-fullcrashdump")
 
-echo "Starting server"
+echo "[INFO][Server::start] Starting server"
 
 "${STEAMAPPDIR}/SquadGameServer.sh" "${start_args[@]}" | dos2unix
