@@ -21,16 +21,26 @@ fi
 sed -i -e 's/Port=21114/'"Port=${RCONPORT}"'/g' "${STEAMAPPDIR}/SquadGame/ServerConfig/Rcon.cfg"
 
 download_mod() {
-  modid="$1"
-  echo "[INFO][Mod::download] Downloading mod '${modid}'"
+  mod_id="$1"
+  echo "[INFO][Mod::download] Downloading mod '${mod_id}'"
 
-  download_args=(+force_install_dir "${STEAMAPPDIR}" +login anonymous +workshop_download_item "${WORKSHOPID}" "${modid}" validate +quit)
+  download_args=(+force_install_dir "${STEAMAPPDIR}" +login anonymous +workshop_download_item "${WORKSHOPID}" "${mod_id}" validate +quit)
 
   if "${steam_cmd}" "${download_args[@]}"; then
     printf "\n[INFO][Mod::download] Mod downloaded\n"
   else
     printf "\n[ERROR][Mod::downloaod] Failed to download mod, retrying\n"
     download_mod "$1"
+  fi
+
+  mod_hook_var=POST_INSTALL_${mod_id}
+  if [[ -n ${!mod_hook_var} ]]; then
+    [[ ! -f ${!mod_hook_var} ]] && echo "[ERROR][Mod::hook] Hook was defined but does not exists at ${!mod_hook_var}" && return
+    echo "[INFO][Mod::hook] running hook"
+    export MODID=$mod_id
+    "${!mod_hook_var}"
+  else
+    echo "[INFO][Mod::hook] no hook found, expected env variable ${mod_hook_var}"
   fi
 }
 
